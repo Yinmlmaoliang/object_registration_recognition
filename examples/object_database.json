@@ -1,0 +1,23 @@
+{
+    "cellphone1": {
+        "name": "Cellphone",
+        "supporting_images_path": "examples/handheld/cellphone1",
+        "query_images_path": "examples/scence",
+        "category": "Electronic",
+        "attributes": [
+            "my favorite cellphone",
+            "my daily cellphone"
+        ]
+    },
+    "mug1": {
+        "name": "Mug",
+        "supporting_images_path": "examples/handheld/mug1",
+        "query_images_path": "examples/scence",
+        "category": "Household",
+        "attributes": [
+            "my favorite mug",
+            "The mug is blue",
+            "A mug featuring Mickey Mouse"
+        ]
+    }
+}
