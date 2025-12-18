@@ -14,11 +14,20 @@ Usage:
 
     # Specify output directory
     python recognize_object.py --image_dir path/to/query_scenes/ --templates templates/objects --output recognition_results/
+
+    # Text-based object retrieval and recognition
+    python recognize_object.py --image_dir examples/scence/ --templates templates/my_objects \
+        --query "Find my Mickey Mouse mug"
+
+    # Text query with custom threshold
+    python recognize_object.py --image path/to/scene.jpg --templates templates/my_objects \
+        --query "my favorite cellphone" --text_threshold 0.4
 """
 
 import argparse
 import sys
 from pathlib import Path
+from typing import Optional
 from PIL import Image
 
 # Add project root to path
@@ -84,6 +93,18 @@ def parse_args():
         default='cuda',
         choices=['cuda', 'cpu'],
         help='Device to use (default: cuda)'
+    )
+    parser.add_argument(
+        '--query',
+        type=str,
+        default=None,
+        help='Text query for object retrieval (e.g., "Find my Mickey Mouse mug")'
+    )
+    parser.add_argument(
+        '--text_threshold',
+        type=float,
+        default=0.3,
+        help='Text similarity threshold for retrieval (default: 0.3)'
     )
 
     return parser.parse_args()
@@ -171,16 +192,26 @@ def main():
     print(f"Prompt: '{args.prompt}'")
     print(f"Threshold: {args.threshold}")
     print(f"Output: {args.output}")
+    if args.query:
+        print(f"Text query: '{args.query}'")
+        print(f"Text threshold: {args.text_threshold}")
 
     # Load models
     print("\n" + "-" * 80)
     print("Loading models...")
     print("-" * 80)
 
+    text_encoder = None
     try:
         loader = ModelLoader(device=args.device, verbose=False)
-        models = loader.load_all()
+        # Load text encoder if query is provided
+        include_text_encoder = args.query is not None
+        models = loader.load_all(include_text_encoder=include_text_encoder)
+        if include_text_encoder:
+            text_encoder = models.get('text_encoder')
         print("✓ Models loaded successfully")
+        if text_encoder:
+            print(f"✓ Text encoder loaded (dim: {text_encoder.embedding_dim})")
     except Exception as e:
         print(f"✗ Failed to load models: {e}")
         return 1
@@ -206,9 +237,17 @@ def main():
         print(f"✓ Loaded {num_loaded} instance(s)")
 
         template_info = recognizer.get_template_info()
+        text_embeddings = recognizer.get_text_embeddings()
         for inst_id in template_info['instance_ids']:
             count = template_info['templates_per_instance'][inst_id]
-            print(f"  - {inst_id}: {count} templates")
+            has_text = inst_id in text_embeddings
+            text_marker = " [+text]" if has_text else ""
+            print(f"  - {inst_id}: {count} templates{text_marker}")
+
+        # Check if text query can be used
+        if args.query and not text_embeddings:
+            print("\nWarning: Text query provided but no text embeddings in templates")
+            print("         Text-based retrieval will be skipped")
     except Exception as e:
         print(f"✗ Failed to load templates: {e}")
         return 1
@@ -216,6 +255,35 @@ def main():
     # Prepare output directory
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Text retrieval if query provided
+    use_text_query = args.query and text_encoder and recognizer.has_text_embeddings()
+    text_retrieval_results = None
+
+    if use_text_query:
+        print("\n" + "-" * 80)
+        print("Text-based retrieval...")
+        print("-" * 80)
+        print(f"Query: '{args.query}'")
+
+        text_retrieval_results = recognizer.retrieve_by_text(
+            query=args.query,
+            text_encoder=text_encoder,
+            top_k=len(template_info['instance_ids'])
+        )
+
+        print(f"\nRetrieval results (threshold >= {args.text_threshold}):")
+        for i, result in enumerate(text_retrieval_results, 1):
+            status = "✓" if result['score'] >= args.text_threshold else "✗"
+            print(f"  {status} {i}. {result['instance_id']}: {result['score']:.4f}")
+
+        # Filter to candidates above threshold
+        candidate_ids = [r['instance_id'] for r in text_retrieval_results if r['score'] >= args.text_threshold]
+        if not candidate_ids:
+            print(f"\nNo instances matched text query with threshold >= {args.text_threshold}")
+            print("Try lowering --text_threshold or using a different query")
+        else:
+            print(f"\nTarget instance(s): {candidate_ids}")
 
     # Recognize objects
     print("\n" + "-" * 80)
@@ -231,12 +299,25 @@ def main():
 
         try:
             image = Image.open(image_path).convert('RGB')
-            result = recognizer.recognize(
-                image=image,
-                prompt=args.prompt,
-                return_features=False,
-                return_masks=True
-            )
+
+            # Use text-filtered recognition if query provided
+            if use_text_query:
+                result = recognizer.recognize_with_text_query(
+                    image=image,
+                    query=args.query,
+                    text_encoder=text_encoder,
+                    prompt=args.prompt,
+                    text_threshold=args.text_threshold,
+                    return_features=False,
+                    return_masks=True
+                )
+            else:
+                result = recognizer.recognize(
+                    image=image,
+                    prompt=args.prompt,
+                    return_features=False,
+                    return_masks=True
+                )
 
             if result.success:
                 # Filter to best matches
@@ -253,11 +334,15 @@ def main():
                     for j, rec in enumerate(best_matches, 1):
                         inst_id = rec['instance_id']
                         conf = rec['confidence']
-                        print(f"    {j}. {inst_id} (confidence: {conf:.4f})")
+                        # Show text score if available
+                        text_score_str = ""
+                        if 'text_score' in rec:
+                            text_score_str = f", text: {rec['text_score']:.4f}"
+                        print(f"    {j}. {inst_id} (visual: {conf:.4f}{text_score_str})")
 
                         # Show top-3 alternative matches
                         if 'top_k_matches' in rec and len(rec['top_k_matches']) > 1:
-                            print(f"       Top-3 matches:")
+                            print(f"       Top-3 visual matches:")
                             for rank, (match_id, score) in enumerate(rec['top_k_matches'][:3], 1):
                                 print(f"         {rank}. {match_id}: {score:.4f}")
 
@@ -286,6 +371,10 @@ def main():
     print("\n" + "=" * 80)
     print("Recognition Summary")
     print("=" * 80)
+
+    if use_text_query:
+        print(f"Text query: '{args.query}'")
+        print(f"Text threshold: {args.text_threshold}")
 
     print(f"Total images: {len(image_paths)}")
     print(f"Total detections: {total_detections}")

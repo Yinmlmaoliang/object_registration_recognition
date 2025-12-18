@@ -96,6 +96,8 @@ class ObjectRegistrar:
         # Template storage
         self._templates: Dict[str, List[np.ndarray]] = {}
         self._metadata: Dict[str, List[Dict]] = {}
+        self._text_embeddings: Dict[str, np.ndarray] = {}
+        self._attributes: Dict[str, List[str]] = {}
 
         if self.verbose:
             print("ObjectRegistrar initialized")
@@ -217,6 +219,46 @@ class ObjectRegistrar:
             segmentation_score=seg_score
         )
 
+    def register_with_attributes(
+        self,
+        image: Union[Image.Image, str, Path],
+        instance_id: str,
+        attributes: List[str],
+        text_encoder: Any,
+        prompt: Optional[str] = None,
+        gt_bbox: Optional[List[float]] = None
+    ) -> RegistrationResult:
+        """
+        Register an object with text attributes.
+
+        This method performs visual registration and also encodes text attributes
+        for text-based retrieval.
+
+        Args:
+            image: PIL Image, or path to image file
+            instance_id: Unique identifier for this object instance
+            attributes: List of text attribute descriptions
+            text_encoder: TextEncoder instance for encoding attributes
+            prompt: Text prompt for detection (uses default if None)
+            gt_bbox: Optional ground truth bounding box [x0, y0, x1, y1]
+
+        Returns:
+            RegistrationResult with success status and details
+        """
+        # Perform visual registration
+        result = self.register(image, instance_id, prompt, gt_bbox)
+
+        # Encode text attributes (only on first registration for this instance)
+        if result.success and instance_id not in self._text_embeddings:
+            if attributes and text_encoder is not None:
+                self._log(f"  [Stage 5] Encoding text attributes...")
+                text_embedding = text_encoder.encode_attributes(attributes)
+                self._text_embeddings[instance_id] = text_embedding
+                self._attributes[instance_id] = attributes
+                self._log(f"  [Stage 5] Text embedding stored (dim: {text_embedding.shape[0]})")
+
+        return result
+
     def register_batch(
         self,
         images: List[Union[Image.Image, str, Path]],
@@ -264,7 +306,9 @@ class ObjectRegistrar:
                 inst_id: len(embeddings)
                 for inst_id, embeddings in self._templates.items()
             },
-            'feature_dim': self.extractor.feat_dim
+            'visual_feature_dim': self.extractor.feat_dim,
+            'has_text_embeddings': len(self._text_embeddings) > 0,
+            'num_text_embeddings': len(self._text_embeddings)
         }
 
         if stats['num_instances'] > 0:
@@ -274,11 +318,18 @@ class ObjectRegistrar:
         else:
             stats['avg_templates_per_instance'] = 0.0
 
+        # Add text embedding dimension if available
+        if self._text_embeddings:
+            first_emb = next(iter(self._text_embeddings.values()))
+            stats['text_embedding_dim'] = first_emb.shape[0]
+
         return stats
 
     def save_templates(self, save_path: Union[str, Path]) -> Tuple[str, str]:
         """
         Save templates to disk.
+
+        Saves both visual and text embeddings in a unified format.
 
         Args:
             save_path: Base path for saving (without extension)
@@ -292,26 +343,32 @@ class ObjectRegistrar:
         save_path = Path(save_path)
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Save templates
+        # Save templates (unified format with visual and text embeddings)
         templates_path = f"{save_path}_templates.pkl"
-        templates_to_save = self.get_templates()
+        templates_to_save = {
+            'visual_embeddings': self.get_templates(),
+            'text_embeddings': self._text_embeddings.copy()
+        }
 
         with open(templates_path, 'wb') as f:
             pickle.dump(templates_to_save, f)
 
-        # Save metadata
+        # Save metadata (including attributes)
         metadata_path = f"{save_path}_metadata.json"
         metadata_json = {}
 
         for inst_id, meta_list in self._metadata.items():
-            metadata_json[inst_id] = []
+            metadata_json[inst_id] = {
+                'visual_metadata': [],
+                'attributes': self._attributes.get(inst_id, [])
+            }
             for meta in meta_list:
                 meta_copy = meta.copy()
                 if 'bbox' in meta_copy and meta_copy['bbox'] is not None:
                     meta_copy['bbox'] = [float(x) for x in meta_copy['bbox']]
                 if 'seg_score' in meta_copy and meta_copy['seg_score'] is not None:
                     meta_copy['seg_score'] = float(meta_copy['seg_score'])
-                metadata_json[inst_id].append(meta_copy)
+                metadata_json[inst_id]['visual_metadata'].append(meta_copy)
 
         with open(metadata_path, 'w') as f:
             json.dump(metadata_json, f, indent=2)
@@ -319,12 +376,16 @@ class ObjectRegistrar:
         self._log(f"\nTemplates saved:")
         self._log(f"  Templates: {templates_path}")
         self._log(f"  Metadata: {metadata_path}")
+        if self._text_embeddings:
+            self._log(f"  Text embeddings: {len(self._text_embeddings)} instances")
 
         return templates_path, metadata_path
 
     def load_templates(self, load_path: Union[str, Path]) -> int:
         """
         Load templates from disk.
+
+        Supports both new unified format and old format for backward compatibility.
 
         Args:
             load_path: Base path for loading (without extension)
@@ -337,26 +398,56 @@ class ObjectRegistrar:
 
         templates_path = f"{load_path}_templates.pkl"
         with open(templates_path, 'rb') as f:
-            loaded_templates = pickle.load(f)
+            loaded_data = pickle.load(f)
 
+        # Detect format: new unified format vs old format
+        if isinstance(loaded_data, dict) and 'visual_embeddings' in loaded_data:
+            # New unified format
+            loaded_templates = loaded_data['visual_embeddings']
+            loaded_text_embeddings = loaded_data.get('text_embeddings', {})
+        else:
+            # Old format: direct visual embeddings
+            loaded_templates = loaded_data
+            loaded_text_embeddings = {}
+
+        # Load visual templates
         for inst_id, templates_array in loaded_templates.items():
             if inst_id not in self._templates:
                 self._templates[inst_id] = []
             for i in range(templates_array.shape[0]):
                 self._templates[inst_id].append(templates_array[i])
 
+        # Load text embeddings
+        for inst_id, text_emb in loaded_text_embeddings.items():
+            if inst_id not in self._text_embeddings:
+                self._text_embeddings[inst_id] = text_emb
+
+        # Load metadata
         metadata_path = f"{load_path}_metadata.json"
         if os.path.exists(metadata_path):
             with open(metadata_path, 'r') as f:
                 loaded_metadata = json.load(f)
 
-            for inst_id, meta_list in loaded_metadata.items():
+            for inst_id, meta_data in loaded_metadata.items():
+                # Handle both new and old metadata format
+                if isinstance(meta_data, dict) and 'visual_metadata' in meta_data:
+                    # New format
+                    meta_list = meta_data['visual_metadata']
+                    attributes = meta_data.get('attributes', [])
+                    if attributes and inst_id not in self._attributes:
+                        self._attributes[inst_id] = attributes
+                else:
+                    # Old format: meta_data is directly a list
+                    meta_list = meta_data
+
                 if inst_id not in self._metadata:
                     self._metadata[inst_id] = []
                 self._metadata[inst_id].extend(meta_list)
 
         self._log(f"\nTemplates loaded from {load_path}")
         self._log(f"  Instances: {len(loaded_templates)}")
+        if loaded_text_embeddings:
+            self._log(f"  Text embeddings: {len(loaded_text_embeddings)} instances")
 
         return len(loaded_templates)
 
@@ -364,6 +455,8 @@ class ObjectRegistrar:
         """Clear all registered templates."""
         self._templates.clear()
         self._metadata.clear()
+        self._text_embeddings.clear()
+        self._attributes.clear()
         self._log("All templates cleared")
 
     def remove_instance(self, instance_id: str) -> bool:
@@ -372,6 +465,10 @@ class ObjectRegistrar:
             del self._templates[instance_id]
             if instance_id in self._metadata:
                 del self._metadata[instance_id]
+            if instance_id in self._text_embeddings:
+                del self._text_embeddings[instance_id]
+            if instance_id in self._attributes:
+                del self._attributes[instance_id]
             self._log(f"Removed instance: {instance_id}")
             return True
         return False
@@ -379,3 +476,15 @@ class ObjectRegistrar:
     def list_instances(self) -> List[str]:
         """List all registered instance IDs."""
         return list(self._templates.keys())
+
+    def get_text_embeddings(self) -> Dict[str, np.ndarray]:
+        """Get all text embeddings."""
+        return self._text_embeddings.copy()
+
+    def get_attributes(self) -> Dict[str, List[str]]:
+        """Get all attributes."""
+        return self._attributes.copy()
+
+    def has_text_embeddings(self) -> bool:
+        """Check if text embeddings are available."""
+        return len(self._text_embeddings) > 0

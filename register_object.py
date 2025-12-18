@@ -17,11 +17,17 @@ Usage:
 
     # Save visualizations
     python register_object.py --image_dir path/to/handheld_dir/ --instance_id cellphone1 --save_viz
+
+    # Register with text attributes from database (for text-based retrieval)
+    python register_object.py --image_dir examples/handheld/mug1/ --instance_id mug1 \
+        --output templates/my_objects --database examples/object_database.json
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
+from typing import Dict, List, Optional
 from PIL import Image
 
 # Add project root to path
@@ -87,6 +93,12 @@ def parse_args():
         choices=['cuda', 'cpu'],
         help='Device to use (default: cuda)'
     )
+    parser.add_argument(
+        '--database',
+        type=str,
+        default=None,
+        help='Path to object database JSON file for text attributes (default: None)'
+    )
 
     return parser.parse_args()
 
@@ -115,6 +127,19 @@ def get_image_paths(args):
         return image_paths
 
     return []
+
+
+def load_object_database(database_path: str) -> Dict:
+    """Load object database from JSON file."""
+    with open(database_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def get_object_attributes(database: Dict, instance_id: str) -> Optional[List[str]]:
+    """Get attributes for an object instance from database."""
+    if instance_id in database:
+        return database[instance_id].get('attributes', [])
+    return None
 
 
 def save_visualization(image, result, registrar, output_path, image_name, prompt, instance_id):
@@ -188,6 +213,27 @@ def main():
     print(f"Prompt: '{args.prompt}'")
     print(f"Output: {args.output}")
 
+    # Load object database and get attributes if provided
+    database = None
+    attributes = None
+    text_encoder = None
+
+    if args.database:
+        print(f"Database: {args.database}")
+        try:
+            database = load_object_database(args.database)
+            attributes = get_object_attributes(database, args.instance_id)
+            if attributes:
+                print(f"Attributes: {len(attributes)} found for '{args.instance_id}'")
+                for attr in attributes:
+                    print(f"  - {attr}")
+            else:
+                print(f"Warning: No attributes found for '{args.instance_id}' in database")
+        except FileNotFoundError:
+            print(f"Warning: Database file not found: {args.database}")
+        except Exception as e:
+            print(f"Warning: Failed to load database: {e}")
+
     # Load models
     print("\n" + "-" * 80)
     print("Loading models...")
@@ -195,8 +241,14 @@ def main():
 
     try:
         loader = ModelLoader(device=args.device, verbose=False)
-        models = loader.load_all()
+        # Load text encoder if we have attributes
+        include_text_encoder = attributes is not None and len(attributes) > 0
+        models = loader.load_all(include_text_encoder=include_text_encoder)
+        if include_text_encoder:
+            text_encoder = models.get('text_encoder')
         print("✓ Models loaded successfully")
+        if text_encoder:
+            print(f"✓ Text encoder loaded (dim: {text_encoder.embedding_dim})")
     except Exception as e:
         print(f"✗ Failed to load models: {e}")
         return 1
@@ -231,11 +283,22 @@ def main():
 
         try:
             image = Image.open(image_path).convert('RGB')
-            result = registrar.register(
-                image=image,
-                instance_id=args.instance_id,
-                prompt=args.prompt
-            )
+
+            # Use register_with_attributes if attributes are available
+            if attributes and text_encoder:
+                result = registrar.register_with_attributes(
+                    image=image,
+                    instance_id=args.instance_id,
+                    attributes=attributes,
+                    text_encoder=text_encoder,
+                    prompt=args.prompt
+                )
+            else:
+                result = registrar.register(
+                    image=image,
+                    instance_id=args.instance_id,
+                    prompt=args.prompt
+                )
             results.append(result)
 
             if result.success:
@@ -273,9 +336,13 @@ def main():
     stats = registrar.get_template_statistics()
     print(f"\nTemplate Statistics:")
     for inst_id, count in stats['templates_per_instance'].items():
-        print(f"  - {inst_id}: {count} templates")
+        has_text = inst_id in registrar.get_text_embeddings()
+        text_marker = " [+text]" if has_text else ""
+        print(f"  - {inst_id}: {count} templates{text_marker}")
     print(f"Total instances: {stats['num_instances']}")
     print(f"Total templates: {stats['total_templates']}")
+    if stats.get('has_text_embeddings'):
+        print(f"Text embeddings: {stats['num_text_embeddings']} instances")
 
     # Save templates
     print("\n" + "-" * 80)

@@ -18,6 +18,7 @@
             "my favorite mug",
             "The mug is blue",
             "A mug featuring Mickey Mouse"
-        ]
+        ],
+        "query_prompt": ["the object I point to", "the object I point to", "the object I point to"]
     }
 }

@@ -105,6 +105,8 @@ class ObjectRecognizer:
         # Template storage
         self._templates: Dict[str, np.ndarray] = {}
         self._metadata: Dict[str, Any] = {}
+        self._text_embeddings: Dict[str, np.ndarray] = {}
+        self._attributes: Dict[str, List[str]] = {}
 
         if self.verbose:
             print("ObjectRecognizer initialized")
@@ -125,6 +127,8 @@ class ObjectRecognizer:
         """
         Load template library from disk.
 
+        Supports both new unified format and old format for backward compatibility.
+
         Args:
             load_path: Base path for loading (without extension)
             clear_existing: Whether to clear existing templates
@@ -138,6 +142,8 @@ class ObjectRecognizer:
         if clear_existing:
             self._templates.clear()
             self._metadata.clear()
+            self._text_embeddings.clear()
+            self._attributes.clear()
 
         # Load templates
         templates_path = f"{load_path}_templates.pkl"
@@ -145,21 +151,48 @@ class ObjectRecognizer:
             raise FileNotFoundError(f"Templates file not found: {templates_path}")
 
         with open(templates_path, 'rb') as f:
-            loaded_templates = pickle.load(f)
+            loaded_data = pickle.load(f)
+
+        # Detect format: new unified format vs old format
+        if isinstance(loaded_data, dict) and 'visual_embeddings' in loaded_data:
+            # New unified format
+            loaded_templates = loaded_data['visual_embeddings']
+            loaded_text_embeddings = loaded_data.get('text_embeddings', {})
+        else:
+            # Old format: direct visual embeddings
+            loaded_templates = loaded_data
+            loaded_text_embeddings = {}
 
         self._templates.update(loaded_templates)
+        self._text_embeddings.update(loaded_text_embeddings)
 
         # Load metadata
         metadata_path = f"{load_path}_metadata.json"
         if os.path.exists(metadata_path):
             with open(metadata_path, 'r') as f:
                 loaded_metadata = json.load(f)
-            self._metadata.update(loaded_metadata)
+
+            # Handle both new and old metadata format
+            for inst_id, meta_data in loaded_metadata.items():
+                if isinstance(meta_data, dict) and 'visual_metadata' in meta_data:
+                    # New format
+                    self._metadata[inst_id] = meta_data['visual_metadata']
+                    attributes = meta_data.get('attributes', [])
+                    if attributes:
+                        self._attributes[inst_id] = attributes
+                else:
+                    # Old format: meta_data is directly a list
+                    self._metadata[inst_id] = meta_data
 
         self._log(f"\nTemplates loaded from {load_path}")
         self._log(f"  Instances: {len(loaded_templates)}")
         for inst_id, templates in loaded_templates.items():
-            self._log(f"    - {inst_id}: {len(templates)} templates")
+            has_text = inst_id in self._text_embeddings
+            text_marker = " [+text]" if has_text else ""
+            self._log(f"    - {inst_id}: {len(templates)} templates{text_marker}")
+
+        if loaded_text_embeddings:
+            self._log(f"  Text embeddings: {len(loaded_text_embeddings)} instances")
 
         return len(loaded_templates)
 
@@ -394,8 +427,140 @@ class ObjectRecognizer:
         """Clear all loaded templates."""
         self._templates.clear()
         self._metadata.clear()
+        self._text_embeddings.clear()
+        self._attributes.clear()
         self._log("All templates cleared")
 
     def list_instances(self) -> List[str]:
         """List all registered instance IDs."""
         return list(self._templates.keys())
+
+    def has_text_embeddings(self) -> bool:
+        """Check if text embeddings are available."""
+        return len(self._text_embeddings) > 0
+
+    def get_text_embeddings(self) -> Dict[str, np.ndarray]:
+        """Get all text embeddings."""
+        return self._text_embeddings.copy()
+
+    def retrieve_by_text(
+        self,
+        query: str,
+        text_encoder: Any,
+        top_k: int = 5
+    ) -> List[Dict]:
+        """
+        Retrieve matching objects by text query.
+
+        Uses cosine similarity between query embedding and template text embeddings.
+
+        Args:
+            query: Natural language query (e.g., "Find my Mickey Mouse mug")
+            text_encoder: TextEncoder instance for encoding the query
+            top_k: Number of top results to return
+
+        Returns:
+            List of dicts with 'instance_id' and 'score', sorted by score descending
+        """
+        if not self._text_embeddings:
+            self._log("Warning: No text embeddings available for retrieval")
+            return []
+
+        self._log(f"\nText retrieval for query: '{query}'")
+
+        # Encode query
+        query_embedding = text_encoder.encode_query(query)
+
+        # Compute similarities
+        results = text_encoder.compute_similarity(
+            query_embedding=query_embedding,
+            template_embeddings=self._text_embeddings,
+            top_k=top_k
+        )
+
+        # Log results
+        self._log(f"  Top-{min(top_k, len(results))} matches:")
+        for i, result in enumerate(results, 1):
+            self._log(f"    {i}. {result['instance_id']}: {result['score']:.4f}")
+
+        return results
+
+    def recognize_with_text_query(
+        self,
+        image: Union[Image.Image, str, Path],
+        query: str,
+        text_encoder: Any,
+        prompt: Optional[str] = None,
+        text_threshold: float = 0.3,
+        return_features: bool = False,
+        return_masks: bool = True
+    ) -> 'RecognitionResult':
+        """
+        Recognize objects in a query scene, filtered by text query.
+
+        First retrieves candidate instances by text similarity, then performs
+        visual recognition and filters results to matching instances.
+
+        Args:
+            image: PIL Image, or path to image file
+            query: Natural language query for text-based retrieval
+            text_encoder: TextEncoder instance
+            prompt: Text prompt for detection (uses default if None)
+            text_threshold: Minimum text similarity score for candidate instances
+            return_features: Whether to include feature vectors in results
+            return_masks: Whether to include segmentation masks in results
+
+        Returns:
+            RecognitionResult with detected and recognized objects matching the query
+        """
+        # Step 1: Text-based retrieval
+        text_results = self.retrieve_by_text(query, text_encoder, top_k=len(self._templates))
+
+        # Filter by threshold
+        candidate_instances = {
+            r['instance_id'] for r in text_results
+            if r['score'] >= text_threshold
+        }
+
+        if not candidate_instances:
+            self._log(f"  No instances matched text query with threshold >= {text_threshold}")
+            return RecognitionResult(
+                success=True,
+                num_detections=0,
+                recognitions=[],
+                error_message=None
+            )
+
+        self._log(f"  Candidate instances from text retrieval: {candidate_instances}")
+
+        # Step 2: Visual recognition
+        result = self.recognize(
+            image=image,
+            prompt=prompt,
+            return_features=return_features,
+            return_masks=return_masks
+        )
+
+        if not result.success:
+            return result
+
+        # Step 3: Filter recognitions to text-matched instances
+        filtered_recognitions = []
+        for rec in result.recognitions:
+            if rec['instance_id'] in candidate_instances:
+                # Add text retrieval score
+                text_score = next(
+                    (r['score'] for r in text_results if r['instance_id'] == rec['instance_id']),
+                    0.0
+                )
+                rec['text_score'] = text_score
+                filtered_recognitions.append(rec)
+
+        self._log(f"  Filtered recognitions: {len(filtered_recognitions)} (from {len(result.recognitions)})")
+
+        return RecognitionResult(
+            success=True,
+            num_detections=result.num_detections,
+            recognitions=filtered_recognitions,
+            error_message=None
+        )

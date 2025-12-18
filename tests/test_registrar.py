@@ -358,7 +358,7 @@ def main():
     output_dir = setup_output_directory("debug_output")
 
     # Setup paths
-    handheld_dir = PROJECT_ROOT / "examples" / "handheld" / "cellphone1"
+    handheld_dir = PROJECT_ROOT / "examples" / "test"
     image_files = sorted(handheld_dir.glob("*.jpg"))
 
     if not image_files:
@@ -386,7 +386,7 @@ def main():
         detector=models['detector'],
         segmenter=models['segmenter'],
         extractor=models['extractor'],
-        default_prompt="item held by hand",
+        default_prompt="the object I point to",
         verbose=True
     )
 
@@ -396,7 +396,7 @@ def main():
         image_path=image_files[0],
         instance_id="cellphone1",
         output_dir=output_dir,
-        prompt="item held by hand"
+        prompt="the object I point to"
     )
 
     # Clear templates before n-shot test
@@ -408,7 +408,7 @@ def main():
         image_paths=image_files,
         instance_id="cellphone1",
         output_dir=output_dir,
-        prompt="item held by hand"
+        prompt="the object I point to"
     )
 
     # Test 3: Template save/load

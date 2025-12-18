@@ -42,11 +42,23 @@ python register_object.py \
   --save_viz
 ```
 
-**重要**：`--output` 指定的是模板库名称，多个物体实例可以共享同一个模板库，通过 `--instance_id` 区分不同物体。
+**带文本属性的注册**（推荐，支持自然语言查询）：
+
+```bash
+python register_object.py \
+  --image_dir examples/handheld/mug1/ \
+  --instance_id mug1 \
+  --output templates/my_objects \
+  --database examples/object_database.json
+```
+
+**重要**：
+- `--output` 指定的是模板库名称，多个物体实例可以共享同一个模板库，通过 `--instance_id` 区分不同物体
+- `--database` 指定物体属性数据库，系统会根据 `instance_id` 自动查找并编码文本属性
 
 **预期结果**：
-- 模板文件：`templates/my_objects_templates.pkl`（包含 cellphone1 实例）
-- 元数据文件：`templates/my_objects_metadata.json`
+- 模板文件：`templates/my_objects_templates.pkl`（包含视觉特征和文本嵌入）
+- 元数据文件：`templates/my_objects_metadata.json`（包含属性列表）
 - 可视化图像：`templates/my_objects_visualizations/`
 
 #### 步骤 2：识别物体
@@ -61,9 +73,19 @@ python recognize_object.py \
   --threshold 0.5
 ```
 
+**文本查询识别**（推荐，使用自然语言定位特定物体）：
+
+```bash
+python recognize_object.py \
+  --image_dir examples/scence/ \
+  --templates templates/my_objects \
+  --query "Find my Mickey Mouse mug"
+```
+
 **预期结果**：
 - 可视化结果：`recognition_results/visualizations/`
 - 终端输出显示每张图像的匹配结果和置信度
+- 使用 `--query` 时，会先进行文本检索筛选目标物体，再进行视觉定位
 
 ## 常用命令
 
@@ -81,6 +103,10 @@ python register_object.py --image_dir path/to/images/ --instance_id object_name 
 
 # 自定义提示词
 python register_object.py --image_dir path/to/images/ --instance_id object_name --prompt "custom prompt"
+
+# 带文本属性注册（用于文本查询）
+python register_object.py --image_dir path/to/images/ --instance_id object_name \
+  --database examples/object_database.json
 ```
 
 ### 识别命令
@@ -94,6 +120,14 @@ python recognize_object.py --image_dir path/to/queries/ --templates path/to/temp
 
 # 调整阈值
 python recognize_object.py --image_dir path/to/queries/ --templates path/to/templates --threshold 0.6
+
+# 文本查询识别
+python recognize_object.py --image_dir path/to/queries/ --templates path/to/templates \
+  --query "my favorite mug"
+
+# 调整文本相似度阈值
+python recognize_object.py --image_dir path/to/queries/ --templates path/to/templates \
+  --query "my favorite mug" --text_threshold 0.4
 ```
 
 ## 增量添加多个物体
@@ -127,6 +161,58 @@ python recognize_object.py \
 
 **结果**：`templates/my_objects_templates.pkl` 文件中包含 cellphone1、mug1、bottle1 三个实例的模板。
 
+## 文本属性与自然语言查询
+
+### 物体属性数据库
+
+物体属性存储在 JSON 文件中（如 `examples/object_database.json`）：
+
+```json
+{
+    "mug1": {
+        "name": "Mug",
+        "supporting_images_path": "examples/handheld/mug1",
+        "query_images_path": "examples/scence",
+        "category": "Household",
+        "attributes": [
+            "my favorite mug",
+            "The mug is blue",
+            "A mug featuring Mickey Mouse"
+        ]
+    }
+}
+```
+
+**属性设计建议**：
+- 聚焦功能、用途、所有权和特殊属性
+- 避免模糊的视觉特征（如仅描述颜色）
+- 每个物体建议 3-5 个描述性属性
+
+### 文本查询工作流
+
+1. **注册时编码属性**：使用 `--database` 参数，系统会自动编码物体的文本属性
+2. **查询时检索**：使用 `--query` 参数，系统会：
+   - 将查询文本编码为向量
+   - 与所有物体的文本嵌入计算相似度
+   - 筛选匹配的物体实例
+   - 在场景中视觉定位这些物体
+
+### 示例查询
+
+```bash
+# 查找特定物体
+python recognize_object.py --image_dir examples/scence/ --templates templates/my_objects \
+  --query "Find my Mickey Mouse mug"
+
+# 基于功能查找
+python recognize_object.py --image_dir examples/scence/ --templates templates/my_objects \
+  --query "my daily cellphone"
+
+# 基于用途查找
+python recognize_object.py --image_dir examples/scence/ --templates templates/my_objects \
+  --query "the cup I use for morning coffee"
+```
+
 ## 查看帮助
 
 ```bash
@@ -140,9 +226,12 @@ python recognize_object.py --help
 
 ```
 .
+├── examples/
+│   └── object_database.json           # 物体属性数据库
+│
 ├── templates/                          # 模板库目录
-│   ├── my_objects_templates.pkl       # 特征嵌入（包含所有实例）
-│   ├── my_objects_metadata.json       # 元数据（包含所有实例）
+│   ├── my_objects_templates.pkl       # 特征嵌入（视觉+文本）
+│   ├── my_objects_metadata.json       # 元数据（包含属性列表）
 │   └── my_objects_visualizations/     # 注册可视化（可选）
 │       ├── cellphone1_001_00000579.jpg
 │       ├── mug1_001_00000123.jpg
@@ -154,10 +243,19 @@ python recognize_object.py --help
         └── image2_recognition.jpg
 ```
 
+**模板文件格式**（新版统一格式）：
+```python
+{
+    'visual_embeddings': {instance_id: np.ndarray[N, 768]},  # DINOv3特征
+    'text_embeddings': {instance_id: np.ndarray[384]}        # 文本嵌入
+}
+```
+
 **说明**：
 - `my_objects` 是模板库的统一名称
 - 一个模板库文件可以包含多个物体实例（cellphone1, mug1, bottle1等）
 - 通过 `instance_id` 区分不同的物体
+- 文本嵌入使用 `all-MiniLM-L6-v2` 模型（384维）
 
 ## 下一步
 

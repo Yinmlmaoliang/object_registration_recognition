@@ -72,6 +72,7 @@ class ModelLoader:
         self._segmenter = None
         self._extractor = None
         self._matcher = None
+        self._text_encoder = None
 
         if self.verbose:
             print("=" * 60)
@@ -158,9 +159,29 @@ class ModelLoader:
 
         return self._matcher
 
-    def load_all(self) -> Dict[str, Any]:
+    def load_text_encoder(self) -> Any:
+        """Load the text encoder for attribute/query embedding."""
+        if self._text_encoder is None:
+            self._log("\n[5/5] Loading text encoder...")
+
+            from .utils.text_encoder import TextEncoder
+
+            self._text_encoder = TextEncoder(
+                device=self.device,
+                verbose=self.verbose
+            )
+
+            self._log(f"  Text encoder loaded successfully!")
+            self._log(f"  Embedding dimension: {self._text_encoder.embedding_dim}")
+
+        return self._text_encoder
+
+    def load_all(self, include_text_encoder: bool = False) -> Dict[str, Any]:
         """
         Load all models and return them as a dictionary.
+
+        Args:
+            include_text_encoder: Whether to include the text encoder
 
         Returns:
             Dictionary containing all model instances
@@ -174,6 +195,9 @@ class ModelLoader:
             'extractor': self.load_extractor(),
             'matcher': self.load_matcher()
         }
+
+        if include_text_encoder:
+            models['text_encoder'] = self.load_text_encoder()
 
         self._log("\n" + "=" * 60)
         self._log("All models loaded successfully!")
@@ -192,12 +216,16 @@ class ModelLoader:
                 'detector': self._detector is not None,
                 'segmenter': self._segmenter is not None,
                 'extractor': self._extractor is not None,
-                'matcher': self._matcher is not None
+                'matcher': self._matcher is not None,
+                'text_encoder': self._text_encoder is not None
             }
         }
 
         if self._extractor is not None:
-            info['feature_dim'] = self._extractor.feat_dim
+            info['visual_feature_dim'] = self._extractor.feat_dim
+
+        if self._text_encoder is not None:
+            info['text_embedding_dim'] = self._text_encoder.embedding_dim
 
         return info
 
@@ -220,3 +248,8 @@ class ModelLoader:
     def matcher(self) -> Any:
         """Get the template matcher (lazy loading)."""
         return self.load_matcher()
+
+    @property
+    def text_encoder(self) -> Any:
+        """Get the text encoder (lazy loading)."""
+        return self.load_text_encoder()
