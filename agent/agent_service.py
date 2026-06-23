@@ -204,7 +204,7 @@ class AgentService:
         This method:
         1. Loads images from the specified path
         2. Detects and segments the object in each image
-        3. Extracts visual features using DINOv3-FFA
+        3. Extracts visual features using DINOv3-MGFA
         4. Encodes text attributes using SentenceTransformer
         5. Saves all features to the template library
 

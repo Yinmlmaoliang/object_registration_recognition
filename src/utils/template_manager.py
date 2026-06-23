@@ -53,7 +53,7 @@ class TemplateManager:
             dataset: List of samples, each with 'image_path', 'instance_id', 'bbox', etc.
             detector: RexOmniDetector instance
             segmenter: SAM2Segmenter instance
-            extractor: FFAFeatureExtractor instance
+            extractor: MGFAFeatureExtractor instance
             prompt_text: Text prompt for detection
             save_path: Optional path to save templates
             verbose: Whether to print progress
@@ -103,9 +103,9 @@ class TemplateManager:
 
             mask = seg_result['mask']
 
-            # Extract embedding using FFA
+            # Extract embedding using MGFA
             embedding = extractor.extract_embedding(
-                image, bbox=pred_bbox, mask=mask, use_ffa=True
+                image, bbox=pred_bbox, mask=mask, use_mgfa=True
             )
 
             # Store template

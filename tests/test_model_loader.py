@@ -90,9 +90,9 @@ class TestModelLoader(unittest.TestCase):
         # Property access
         self.assertEqual(self.loader.segmenter, mock_instance)
 
-    @patch('src.utils.ffa_extractor.FFAFeatureExtractor')
+    @patch('src.utils.mgfa_extractor.MGFAFeatureExtractor')
     def test_load_extractor(self, MockExtractor):
-        """Test lazy loading of the DINOv3-FFA extractor."""
+        """Test lazy loading of the DINOv3-MGFA extractor."""
         mock_instance = MagicMock()
         # Mock feat_dim attribute
         mock_instance.feat_dim = 768
@@ -125,7 +125,7 @@ class TestModelLoader(unittest.TestCase):
 
     @patch('src.utils.rexomni_detector.RexOmniDetector')
     @patch('src.utils.sam2_segmenter.SAM2Segmenter')
-    @patch('src.utils.ffa_extractor.FFAFeatureExtractor')
+    @patch('src.utils.mgfa_extractor.MGFAFeatureExtractor')
     @patch('src.utils.matcher.TemplateMatcher')
     def test_load_all(self, MockMatcher, MockExtractor, MockSegmenter, MockDetector):
         """Test load_all method."""
@@ -156,7 +156,7 @@ class TestModelLoader(unittest.TestCase):
         print("\n\n[Test Info] Model Loading Status:")
         print(json.dumps(info, indent=2, default=str))
 
-    @patch('src.utils.ffa_extractor.FFAFeatureExtractor')
+    @patch('src.utils.mgfa_extractor.MGFAFeatureExtractor')
     def test_get_model_info(self, MockExtractor):
         """Test get_model_info method."""
         # Initial info (nothing loaded)

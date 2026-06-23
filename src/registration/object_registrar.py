@@ -46,7 +46,7 @@ class ObjectRegistrar:
     This class encapsulates the "handheld interaction learning" logic:
     1. Detect the handheld object using RexOmni
     2. Segment the object using SAM2
-    3. Extract features using DINOv3-FFA
+    3. Extract features using DINOv3-MGFA
     4. Store the feature vector in the template library
 
     Example:
@@ -83,7 +83,7 @@ class ObjectRegistrar:
         Args:
             detector: RexOmniDetector instance
             segmenter: SAM2Segmenter instance
-            extractor: FFAFeatureExtractor instance
+            extractor: MGFAFeatureExtractor instance
             default_prompt: Default text prompt for detection
             verbose: Whether to print progress information
         """
@@ -188,7 +188,7 @@ class ObjectRegistrar:
         # Stage 3: Feature Extraction
         self._log("  [Stage 3] Extracting features...")
         embedding = self.extractor.extract_embedding(
-            image, bbox=best_bbox, mask=mask, use_ffa=True
+            image, bbox=best_bbox, mask=mask, use_mgfa=True
         )
 
         self._log(f"  [Stage 3] Feature extracted (dim: {embedding.shape[0]})")

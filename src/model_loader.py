@@ -4,7 +4,7 @@ Model Loader for Object Registration and Recognition System.
 This module provides a unified interface for loading all required models:
 - RexOmni: Object detection
 - SAM2: Instance segmentation
-- DINOv3-FFA: Feature extraction
+- DINOv3-MGFA: Feature extraction
 """
 
 import sys
@@ -22,7 +22,7 @@ class ModelLoader:
     Loads and manages all required models:
     - RexOmni (Detection)
     - SAM2 (Segmentation)
-    - DINOv3-FFA (Feature Extraction)
+    - DINOv3-MGFA (Feature Extraction)
 
     Example:
         >>> loader = ModelLoader(device="cuda")
@@ -124,13 +124,13 @@ class ModelLoader:
         return self._segmenter
 
     def load_extractor(self) -> Any:
-        """Load the DINOv3-FFA feature extractor."""
+        """Load the DINOv3-MGFA feature extractor."""
         if self._extractor is None:
-            self._log("\n[3/4] Loading DINOv3-FFA extractor...")
+            self._log("\n[3/4] Loading DINOv3-MGFA extractor...")
 
-            from .utils.ffa_extractor import FFAFeatureExtractor
+            from .utils.mgfa_extractor import MGFAFeatureExtractor
 
-            self._extractor = FFAFeatureExtractor(
+            self._extractor = MGFAFeatureExtractor(
                 backbone=self.dinov3_backbone,
                 device=self.device,
                 image_size=448,

@@ -8,7 +8,7 @@ This is a few-shot object registration and recognition system that learns object
 
 1. **RexOmni**: Object detection via text prompts
 2. **SAM2**: Instance segmentation from bounding boxes
-3. **DINOv3-FFA**: Feature extraction with Foreground Feature Averaging
+3. **DINOv3-MGFA**: Feature extraction with Mask-Guided Feature Aggregation
 4. **SentenceTransformer**: Text attribute encoding for RAG-based retrieval
 
 The core workflow is:
@@ -136,7 +136,7 @@ bash download_ckpts.sh
 **`src/utils/`**: Core model wrappers and utilities
 - `rexomni_detector.py`: RexOmni detection wrapper with prompt strategies
 - `sam2_segmenter.py`: SAM2 segmentation wrapper supporting single/batch modes
-- `ffa_extractor.py`: DINOv3 feature extractor with Foreground Feature Averaging
+- `mgfa_extractor.py`: DINOv3 feature extractor with Mask-Guided Feature Aggregation
 - `text_encoder.py`: SentenceTransformer wrapper for text attribute encoding
 - `matcher.py`: Template matching with cosine/euclidean similarity
 - `template_manager.py`: Template storage and management
@@ -160,14 +160,14 @@ segmenter = loader.segmenter
 text_encoder = loader.text_encoder  # Loads SentenceTransformer
 ```
 
-### Feature Extraction with FFA
+### Feature Extraction with MGFA
 
-**Critical Detail**: When using `FFAFeatureExtractor.extract_embedding()`:
+**Critical Detail**: When using `MGFAFeatureExtractor.extract_embedding()`:
 - Masks must be in **FULL IMAGE SIZE** (H_full, W_full)
 - The extractor automatically crops masks to match the bbox region
 - This ensures proper spatial alignment with DINOv3 patch features
 - The cropped region is resized to `image_size` (default 448x448)
-- Features are extracted at patch-level then aggregated via FFA
+- Features are extracted at patch-level then aggregated via MGFA
 
 ### Detection Pipeline Details
 
@@ -237,7 +237,7 @@ The `ObjectRegistrar` encapsulates the full pipeline:
 2. Detect with RexOmni (returns bboxes)
 3. If multiple detections and ground truth provided, select best by IoU
 4. Segment with SAM2 using selected bbox
-5. Extract visual embedding with DINOv3-FFA using mask
+5. Extract visual embedding with DINOv3-MGFA using mask
 6. (Optional) Encode text attributes with SentenceTransformer
 7. Store embeddings in templates dict keyed by instance_id
 

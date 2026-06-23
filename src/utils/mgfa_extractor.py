@@ -1,10 +1,10 @@
 """
-Foreground Feature Averaging (FFA) Feature Extractor for Template Matching.
+Mask-Guided Feature Aggregation (MGFA) Feature Extractor for Template Matching.
 
-This module implements feature extraction using DINOv3 with Foreground Feature Averaging,
+This module implements feature extraction using DINOv3 with Mask-Guided Feature Aggregation,
 which focuses on foreground regions of objects for better instance-level embeddings.
 
-Based on NIDS-Net's FFA implementation.
+Based on NIDS-Net's MGFA implementation.
 """
 
 import sys
@@ -25,11 +25,11 @@ if str(PROJECT_ROOT) not in sys.path:
 from models.dinov3 import Dinov3ViT
 
 
-class FFAFeatureExtractor:
+class MGFAFeatureExtractor:
     """
-    Feature extractor using DINOv3 with Foreground Feature Averaging (FFA).
+    Feature extractor using DINOv3 with Mask-Guided Feature Aggregation (MGFA).
 
-    FFA averages patch features weighted by foreground masks, focusing on
+    MGFA averages patch features weighted by foreground masks, focusing on
     object-specific features and reducing background noise.
 
     IMPORTANT: When providing masks to extract_embedding():
@@ -46,7 +46,7 @@ class FFAFeatureExtractor:
         normalize_features: bool = True
     ):
         """
-        Initialize the FFA feature extractor.
+        Initialize the MGFA feature extractor.
 
         Args:
             backbone: DINOv3 backbone type ('vits16', 'vitb16', 'vitl16')
@@ -171,20 +171,20 @@ class FFAFeatureExtractor:
 
         return features
 
-    def foreground_feature_averaging(
+    def mask_guided_feature_aggregation(
         self,
         features: torch.Tensor,
         mask: torch.Tensor
     ) -> torch.Tensor:
         """
-        Perform Foreground Feature Averaging (FFA).
+        Perform Mask-Guided Feature Aggregation (MGFA).
 
         Args:
             features: Patch features [1, H, W, C]
             mask: Aligned mask [1, 1, H, W]
 
         Returns:
-            Averaged embedding [1, C]
+            Aggregated embedding [1, C]
         """
         # Permute mask to [1, H, W, 1] for broadcasting
         mask_permuted = mask.permute(0, 2, 3, 1)  # [1, H, W, 1]
@@ -223,7 +223,7 @@ class FFAFeatureExtractor:
         image: Union[Image.Image, np.ndarray],
         bbox: Optional[Tuple[int, int, int, int]] = None,
         mask: Optional[Union[np.ndarray, torch.Tensor]] = None,
-        use_ffa: bool = True
+        use_mgfa: bool = True
     ) -> np.ndarray:
         """
         Extract embedding for a single object instance.
@@ -231,8 +231,8 @@ class FFAFeatureExtractor:
         Args:
             image: Input image (PIL or numpy array)
             bbox: Bounding box [x0, y0, x1, y1] to crop the object
-            mask: Optional foreground mask for FFA (full image size)
-            use_ffa: Whether to use FFA (requires mask) or global pooling
+            mask: Optional foreground mask for MGFA (full image size)
+            use_mgfa: Whether to use MGFA (requires mask) or global pooling
 
         Returns:
             Feature embedding [feat_dim] as numpy array
@@ -243,8 +243,8 @@ class FFAFeatureExtractor:
         # Extract features
         features = self.extract_features(image_tensor)
 
-        # Apply FFA or global pooling
-        if use_ffa and mask is not None:
+        # Apply MGFA or global pooling
+        if use_mgfa and mask is not None:
             # Handle 3D mask (C, H, W) where C=1
             if mask.ndim == 3 and mask.shape[0] == 1:
                 mask = mask[0]
@@ -273,8 +273,8 @@ class FFAFeatureExtractor:
 
             # Align cropped mask to patch grid
             mask_aligned = self.align_mask_to_patch_grid(mask_cropped)
-            # FFA
-            embedding = self.foreground_feature_averaging(features, mask_aligned)
+            # MGFA
+            embedding = self.mask_guided_feature_aggregation(features, mask_aligned)
         else:
             # Global average pooling
             embedding = self.global_average_pooling(features)
@@ -293,7 +293,7 @@ class FFAFeatureExtractor:
         images: list,
         bboxes: list,
         masks: Optional[list] = None,
-        use_ffa: bool = True
+        use_mgfa: bool = True
     ) -> np.ndarray:
         """
         Extract embeddings for multiple objects in batch.
@@ -302,7 +302,7 @@ class FFAFeatureExtractor:
             images: List of PIL Images or numpy arrays
             bboxes: List of bounding boxes
             masks: Optional list of foreground masks
-            use_ffa: Whether to use FFA
+            use_mgfa: Whether to use MGFA
 
         Returns:
             Embeddings [N, feat_dim] as numpy array
@@ -311,7 +311,7 @@ class FFAFeatureExtractor:
 
         for i, (image, bbox) in enumerate(zip(images, bboxes)):
             mask = masks[i] if masks is not None else None
-            embedding = self.extract_embedding(image, bbox, mask, use_ffa)
+            embedding = self.extract_embedding(image, bbox, mask, use_mgfa)
             embeddings.append(embedding)
 
         return np.stack(embeddings, axis=0)  # [N, feat_dim]

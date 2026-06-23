@@ -43,7 +43,7 @@ class ObjectRecognizer:
     This class encapsulates the "query-time recognition" logic:
     1. Detect all objects in the scene using RexOmni
     2. Segment each detected object using SAM2
-    3. Extract features using DINOv3-FFA
+    3. Extract features using DINOv3-MGFA
     4. Match features against template library using TemplateMatcher
     5. Return instance IDs and confidence scores
 
@@ -88,7 +88,7 @@ class ObjectRecognizer:
         Args:
             detector: RexOmniDetector instance
             segmenter: SAM2Segmenter instance
-            extractor: FFAFeatureExtractor instance
+            extractor: MGFAFeatureExtractor instance
             matcher: TemplateMatcher instance
             default_prompt: Default text prompt for detection
             confidence_threshold: Minimum confidence score for recognition
@@ -295,7 +295,7 @@ class ObjectRecognizer:
 
         for i, (bbox, mask) in enumerate(zip(bboxes, masks)):
             embedding = self.extractor.extract_embedding(
-                image, bbox=bbox, mask=mask, use_ffa=True
+                image, bbox=bbox, mask=mask, use_mgfa=True
             )
             proposal_embeddings.append(embedding)
 
