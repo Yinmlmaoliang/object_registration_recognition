@@ -46,6 +46,7 @@ models/
 Thumbs.db
 
 # Project specific
+CLAUDE.md
 *.pkl
 *.pickle
 recognition_results/
