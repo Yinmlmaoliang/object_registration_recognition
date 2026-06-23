@@ -13,24 +13,24 @@ class TextEncoder:
     """
     Text encoder using SentenceTransformer for semantic text embeddings.
 
-    Uses the 'all-MiniLM-L6-v2' model which provides:
-    - 384-dimensional embeddings
-    - Fast inference
-    - Good semantic similarity performance
+    Uses the 'multi-qa-mpnet-base-dot-v1' model which provides:
+    - 768-dimensional embeddings
+    - Better semantic search performance
+    - Trained on QA and search data
 
     Example:
         >>> encoder = TextEncoder()
         >>> # Encode object attributes
         >>> attributes = ["my favorite mug", "blue mug with Mickey Mouse"]
         >>> embedding = encoder.encode_attributes(attributes)
-        >>> print(embedding.shape)  # (384,)
+        >>> print(embedding.shape)  # (768,)
         >>>
         >>> # Encode query
         >>> query_emb = encoder.encode_query("Find my Mickey Mouse mug")
-        >>> print(query_emb.shape)  # (384,)
+        >>> print(query_emb.shape)  # (768,)
     """
 
-    MODEL_NAME = 'all-MiniLM-L6-v2'
+    MODEL_NAME = 'sentence-transformers/multi-qa-mpnet-base-dot-v1'
 
     def __init__(
         self,

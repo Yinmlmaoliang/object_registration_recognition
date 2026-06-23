@@ -33,7 +33,7 @@ class ModelLoader:
     """
 
     # Default model paths (relative to project root)
-    DEFAULT_REXOMNI_PATH = "models/Rex-Omni"
+    DEFAULT_REXOMNI_PATH = "models/Rex-Omni/checkpoints"
     DEFAULT_SAM2_CHECKPOINT = "models/sam2/checkpoints/sam2.1_hiera_large.pt"
     DEFAULT_DINOV3_BACKBONE = "vitb16"
 

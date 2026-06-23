@@ -5,7 +5,6 @@ This module provides a high-level interface to the SAM2 model for segmenting
 objects based on detected bounding boxes.
 """
 
-import sys
 import time
 from pathlib import Path
 from typing import List, Dict, Optional, Union
@@ -13,17 +12,12 @@ from PIL import Image
 import numpy as np
 import torch
 
-# Add SAM2 to path (relative to project root)
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-SAM2_PATH = PROJECT_ROOT / "models" / "sam2"
-if str(SAM2_PATH) not in sys.path:
-    sys.path.insert(0, str(SAM2_PATH))
-
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 
 
-# Default checkpoint and config paths
+# Default checkpoint and config paths (relative to project root)
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 DEFAULT_CHECKPOINT = PROJECT_ROOT / "models" / "sam2" / "checkpoints" / "sam2.1_hiera_large.pt"
 DEFAULT_CONFIG = "configs/sam2.1/sam2.1_hiera_l.yaml"
 

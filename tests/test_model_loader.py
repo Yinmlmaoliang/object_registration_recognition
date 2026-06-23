@@ -172,7 +172,7 @@ class TestModelLoader(unittest.TestCase):
         # Check info again
         info = self.loader.get_model_info()
         self.assertTrue(info['models_loaded']['extractor'])
-        self.assertEqual(info['feature_dim'], 1024)
+        self.assertEqual(info['visual_feature_dim'], 1024)
 
 
 if __name__ == '__main__':
